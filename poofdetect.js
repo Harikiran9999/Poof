@@ -1,7 +1,9 @@
-// Poof: clap/pop sound detector.
-// Listens to the microphone (raw, without the browser's noise suppression,
-// which would eat the click) and looks for a short sharp burst — a clap,
-// pop, or finger snap — basically any short percussive sound.
+// Poof — percussive transient detector.
+//
+// Analyses a high-pass filtered microphone stream in real time via
+// ScriptProcessorNode. Identifies short, sharp bursts (claps, snaps, pops)
+// by tracking RMS energy against an adaptive noise floor and rejecting
+// sustained sounds that exceed a maximum duration window.
 (() => {
   'use strict';
   const P = (window.__poof = window.__poof || {});
@@ -27,8 +29,9 @@
     const hp = ac.createBiquadFilter();
     hp.type = 'highpass';
     hp.frequency.value = 2500;
-    // ScriptProcessor is old but it needs no extra files, so Meet's page
-    // security rules cannot block it
+    // ScriptProcessorNode is deprecated but universally supported and
+    // requires no external worklet files — critical since Meet's CSP
+    // blocks dynamic module loading.
     const sp = ac.createScriptProcessor(512, 1, 1);
     const mute = ac.createGain();
     mute.gain.value = 0;

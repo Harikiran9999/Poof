@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Poof",
   "version": "1.0.0",
-  "description": "Say poof and vanish from your own video in Google Meet. You stay in the call — your image dissolves into a magical cloud of particles and drifts away.",
+  "description": "Vanish from your Google Meet webcam feed with a clap. Dissolves you into particles and shows an empty room — fully local, zero network traffic.",
   "icons": {
     "16": "icons/poof-16.png",
     "48": "icons/poof-48.png",

@@ -1,5 +1,9 @@
-// Poof: hooks the camera in Google Meet, adds the floating control orb,
-// and wires sound detection + hotkeys to the vanish effect.
+// Poof — MediaStream interception layer and UI overlay.
+//
+// Monkey-patches navigator.mediaDevices.getUserMedia to route the camera
+// through the rendering pipeline before Meet receives it. Mounts a
+// shadow-DOM control orb for background capture, manual trigger, and
+// sensitivity adjustment. Wires keyboard shortcuts and the audio detector.
 (() => {
   'use strict';
   const P = (window.__poof = window.__poof || {});
@@ -82,8 +86,8 @@
     const host = document.createElement('div');
     host.style.cssText = 'position:fixed;top:14px;left:14px;z-index:2147483647;';
     const root = host.attachShadow({ mode: 'open' });
-    // built with DOM calls, not innerHTML: Meet enforces Trusted Types and
-    // would silently block innerHTML
+    // All DOM nodes are created programmatically — Meet enforces Trusted
+    // Types which silently block innerHTML assignments.
     const el = (tag, props, kids) => {
       const n = document.createElement(tag);
       Object.assign(n, props || {});

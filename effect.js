@@ -1,8 +1,12 @@
-// Poof: video pipeline + dissolve effect.
-// Draws the real camera onto a canvas. On "poof" the person (found by
-// comparing the live frame with a saved empty-room photo) dissolves into
-// a magical cloud of particles that drift and swirl away, leaving the
-// empty room behind.
+// Poof — core rendering engine.
+//
+// Intercepts the webcam stream via an offscreen canvas and composites three
+// layers each frame: the stored background plate, the masked live feed, and
+// a particle overlay. Person isolation uses frame-differencing against a
+// multi-frame-averaged reference image, cleaned up with blur/threshold/
+// connected-component/hole-fill passes. The dissolve effect sweeps a radial
+// threshold outward from the frame centre, spawning colour-sampled particles
+// at the dissolving boundary.
 (() => {
   'use strict';
   const P = (window.__poof = window.__poof || {});
@@ -96,8 +100,10 @@
       this.dead = false;
     }
 
-    // Order in which the body dissolves: swirling, radial pattern from the
-    // center outward — like a puff of smoke expanding.
+    // Build a per-pixel dissolve ordering. Values near 0 dissolve first,
+    // values near 1 dissolve last. The pattern radiates outward from the
+    // frame centre with angular wobble and per-pixel jitter for an organic,
+    // non-uniform break-apart.
     makeThreshold() {
       const { WW, HH } = this;
       const thr = new Float32Array(WW * HH);
@@ -125,8 +131,9 @@
       if (this.sh.active === this) this.sh.active = null;
     }
 
-    // Save the empty room. Averages several frames so camera noise is
-    // smoothed out and the later comparison is cleaner.
+    // Acquire the reference background plate. Grabs BG_FRAMES consecutive
+    // frames and averages them to suppress sensor noise, producing a clean
+    // baseline for the frame-differencing mask.
     async captureBg() {
       const sh = this.sh;
       const { W, H } = this;
@@ -173,13 +180,19 @@
       return 'busy';
     }
 
-    // Find the person: compare the live frame with the empty room photo,
-    // then clean the result (drop stray patches, fill holes, soften edges).
+    // Segment the person from the background. Pipeline:
+    //   1. Estimate global illumination drift and compensate
+    //   2. Per-pixel colour diff → binary mask
+    //   3. Morphological denoise (blur + threshold)
+    //   4. Connected-component labelling — keep only large blobs
+    //   5. Flood-fill from frame edges to close interior holes
+    //   6. Temporal EMA smoothing to suppress inter-frame flicker
     computeMask(d) {
       const { WW, HH, n, bgSmall, bin, tmp, labels, stack, mask, maskAvg } = this;
 
-      // 1. lighting can drift, so estimate the overall brightness shift from
-      //    the pixels that look unchanged and ignore it
+      // Pass 1: global brightness offset estimation. Compares all pixels on
+      // the first pass, then only "unchanged" pixels on the second pass to
+      // avoid the person's silhouette biasing the offset.
       let o0 = 0, o1 = 0, o2 = 0;
       for (let pass = 0; pass < 2; pass++) {
         let s0 = 0, s1 = 0, s2 = 0, c = 0;
@@ -198,13 +211,16 @@
         bin[i] = diff > DIFF_T ? 255 : 0;
       }
 
-      // 2. remove speckle, then grow back a little
+      // Morphological open-close: blur → hard threshold erodes speckle,
+      // second blur → softer threshold dilates the remaining blobs back.
       blur(bin, tmp, WW, HH, 2);
       for (let i = 0; i < n; i++) bin[i] = bin[i] > 150 ? 255 : 0;
       blur(bin, tmp, WW, HH, 3);
       for (let i = 0; i < n; i++) bin[i] = bin[i] > 70 ? 1 : 0;
 
-      // 3. keep only the big blob(s): the person, not lighting glitches
+      // Connected-component labelling via iterative flood-fill.
+      // Discard blobs smaller than 1.5% of the frame or 25% of the
+      // largest component — keeps the person, drops noise patches.
       labels.fill(0);
       const sizes = [0];
       let next = 0;
@@ -228,8 +244,8 @@
       const minKeep = Math.max(n * 0.015, largest * 0.25);
       for (let i = 0; i < n; i++) bin[i] = labels[i] && sizes[labels[i]] >= minKeep ? 1 : 0;
 
-      // 4. fill holes: anything not connected to the frame edge and not
-      //    person is inside the person
+      // Interior hole fill: flood from every edge pixel; anything the flood
+      // can't reach is enclosed by the silhouette and gets filled in.
       labels.fill(0);
       let sp = 0;
       const seed = (p) => { if (!bin[p] && !labels[p]) { labels[p] = 1; stack[sp++] = p; } };
@@ -245,7 +261,8 @@
       }
       for (let i = 0; i < n; i++) mask[i] = bin[i] || !labels[i] ? 255 : 0;
 
-      // 5. soft edge, plus a little smoothing over time so it does not flicker
+      // Final soft-edge blur + exponential moving average across frames
+      // to stabilise the mask boundary and prevent per-frame jitter.
       blur(mask, tmp, WW, HH, 2);
       const k = this.maskFrames === 0 ? 1 : 0.5;
       for (let i = 0; i < n; i++) maskAvg[i] += (mask[i] - maskAvg[i]) * k;
@@ -365,7 +382,8 @@
       }
       this.alphaCtx.putImageData(this.alphaImg, 0, 0);
 
-      // room first, then whatever is left of the person on top
+      // Composite: background plate → masked live feed (destination-in
+      // blend with the alpha mask) → particle overlay on top.
       ctx.drawImage(this.bgFull, 0, 0, W, H);
       const lc = this.layerCtx;
       lc.globalCompositeOperation = 'source-over';
