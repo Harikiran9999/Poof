@@ -1,0 +1,19 @@
+{
+  "manifest_version": 3,
+  "name": "Poof",
+  "version": "1.0.0",
+  "description": "Say poof and vanish from your own video in Google Meet. You stay in the call — your image dissolves into a magical cloud of particles and drifts away.",
+  "icons": {
+    "16": "icons/poof-16.png",
+    "48": "icons/poof-48.png",
+    "128": "icons/poof-128.png"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://meet.google.com/*"],
+      "js": ["effect.js", "poofdetect.js", "inject.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
+    }
+  ]
+}
